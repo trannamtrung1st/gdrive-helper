@@ -4,7 +4,12 @@ import argparse
 import sys
 from pathlib import Path
 
-from gdrive_helper.auth import build_drive_service, get_credentials
+from gdrive_helper.auth import (
+    build_drive_service,
+    get_credentials,
+    is_service_account,
+    service_account_email,
+)
 from gdrive_helper.uploader import create_drive_folder, upload_images
 
 
@@ -37,7 +42,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--credentials",
         type=Path,
         default=Path("credentials.json"),
-        help="Path to OAuth client secrets JSON (default: credentials.json)",
+        help="Path to credentials JSON — service account or OAuth Desktop (default: credentials.json)",
     )
     parser.add_argument(
         "--token",
@@ -87,6 +92,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.workers < 1:
         print("Error: --workers must be at least 1", file=sys.stderr)
         return 1
+
+    if is_service_account(args.credentials):
+        email = service_account_email(args.credentials)
+        print(
+            f"Using service account: {email}\n"
+            "Ensure the Drive folder is shared with this email (Editor access)."
+        )
 
     creds = get_credentials(args.credentials, args.token)
     service = build_drive_service(creds)

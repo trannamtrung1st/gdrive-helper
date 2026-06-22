@@ -1,39 +1,60 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from google.auth.transport.requests import Request
+from google.oauth2 import service_account
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.discovery import Resource
 
-SCOPES = ["https://www.googleapis.com/auth/drive.file"]
+OAUTH_SCOPES = ["https://www.googleapis.com/auth/drive.file"]
+SERVICE_ACCOUNT_SCOPES = ["https://www.googleapis.com/auth/drive"]
+
+
+def is_service_account(credentials_path: Path) -> bool:
+    info = json.loads(credentials_path.read_text())
+    return info.get("type") == "service_account"
+
+
+def service_account_email(credentials_path: Path) -> str | None:
+    info = json.loads(credentials_path.read_text())
+    if info.get("type") != "service_account":
+        return None
+    return info.get("client_email")
 
 
 def get_credentials(
     credentials_path: Path,
     token_path: Path,
 ) -> Credentials:
-    creds: Credentials | None = None
+    if not credentials_path.exists():
+        raise FileNotFoundError(
+            f"Credentials not found at {credentials_path}. "
+            "Use a service account JSON or OAuth Desktop client secrets from Google Cloud Console."
+        )
 
+    if is_service_account(credentials_path):
+        return service_account.Credentials.from_service_account_file(
+            str(credentials_path),
+            scopes=SERVICE_ACCOUNT_SCOPES,
+        )
+
+    creds: Credentials | None = None
     if token_path.exists():
-        creds = Credentials.from_authorized_user_file(str(token_path), SCOPES)
+        creds = Credentials.from_authorized_user_file(str(token_path), OAUTH_SCOPES)
 
     if creds and creds.expired and creds.refresh_token:
         creds.refresh(Request())
     elif not creds or not creds.valid:
-        if not credentials_path.exists():
-            raise FileNotFoundError(
-                f"OAuth client secrets not found at {credentials_path}. "
-                "Download credentials.json from Google Cloud Console "
-                "(APIs & Services > Credentials > OAuth 2.0 Client ID > Desktop app)."
-            )
-        flow = InstalledAppFlow.from_client_secrets_file(str(credentials_path), SCOPES)
+        flow = InstalledAppFlow.from_client_secrets_file(str(credentials_path), OAUTH_SCOPES)
         creds = flow.run_local_server(port=0)
 
-    token_path.parent.mkdir(parents=True, exist_ok=True)
-    token_path.write_text(creds.to_json())
+        token_path.parent.mkdir(parents=True, exist_ok=True)
+        token_path.write_text(creds.to_json())
+
     return creds
 
 
