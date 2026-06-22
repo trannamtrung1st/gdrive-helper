@@ -8,6 +8,7 @@ build/
 venv/
 .env
 credentials.json
+oauth-credentials.json
 token.json
 *.checkpoint.json
 .DS_Store

@@ -7,7 +7,7 @@ Batch upload images from a local folder to Google Drive. Built for large folders
 - Parallel uploads (default 6 workers; tune with `--workers`)
 - Resumable uploads with automatic retry on rate limits and transient errors
 - Checkpoint file so interrupted runs can resume without re-uploading
-- Recursive scan for common image formats (jpg, png, webp, heic, etc.)
+- Recursive scan for common image formats (jpg, png, webp, heic, etc.) with optional `--recursive`
 
 ## Setup
 
@@ -48,7 +48,7 @@ gdrive-upload /path/to/images --drive-folder-id "1AbCdEfGhIjKlMnOpQrStUvWxYz"
 | Flag | Description |
 |------|-------------|
 | `--workers N` | Concurrent uploads (default: 6). Use 4–8 for large batches. |
-| `--no-recursive` | Only upload files in the top-level folder |
+| `--recursive` | Also upload images in subfolders (default: top-level folder only) |
 | `--parent-folder-id ID` | Create the new folder inside this Drive folder |
 | `--checkpoint PATH` | Custom checkpoint file for resume |
 | `--no-checkpoint` | Disable resume tracking |

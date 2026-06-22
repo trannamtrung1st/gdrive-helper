@@ -13,6 +13,17 @@ from googleapiclient.discovery import Resource
 OAUTH_SCOPES = ["https://www.googleapis.com/auth/drive.file"]
 SERVICE_ACCOUNT_SCOPES = ["https://www.googleapis.com/auth/drive"]
 
+SERVICE_ACCOUNT_PERSONAL_DRIVE_ERROR = (
+    "Service accounts cannot upload to personal Google Drive folders. "
+    "Google blocks this (no storage quota on service accounts).\n\n"
+    "Fix: use OAuth Desktop credentials instead:\n"
+    "  1. Google Cloud Console -> Credentials -> Create OAuth Client ID -> Desktop app\n"
+    "  2. Save as oauth-credentials.json in the project folder\n"
+    "  3. Run: gdrive-upload ... --credentials oauth-credentials.json\n\n"
+    "Alternative: upload to a Shared Drive (Google Workspace) and share that folder "
+    "with the service account."
+)
+
 
 def is_service_account(credentials_path: Path) -> bool:
     info = json.loads(credentials_path.read_text())

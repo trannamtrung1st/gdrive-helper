@@ -15,7 +15,7 @@ from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload
 from tqdm import tqdm
 
-from gdrive_helper.auth import build_drive_service
+from gdrive_helper.auth import SERVICE_ACCOUNT_PERSONAL_DRIVE_ERROR, build_drive_service
 
 IMAGE_EXTENSIONS = {
     ".jpg",
@@ -40,7 +40,7 @@ def _get_thread_service(credentials: Credentials) -> Resource:
     return _thread_local.service
 
 
-def find_images(folder: Path, recursive: bool = True) -> list[Path]:
+def find_images(folder: Path, recursive: bool = False) -> list[Path]:
     folder = folder.resolve()
     if not folder.is_dir():
         raise NotADirectoryError(f"Not a directory: {folder}")
@@ -68,6 +68,35 @@ def create_drive_folder(service: Resource, name: str, parent_id: str | None = No
 
     folder = service.files().create(body=metadata, fields="id").execute()
     return folder["id"]
+
+
+def get_drive_folder_info(service: Resource, folder_id: str) -> dict:
+    return (
+        service.files()
+        .get(
+            fileId=folder_id,
+            fields="id,name,driveId",
+            supportsAllDrives=True,
+        )
+        .execute()
+    )
+
+
+def is_shared_drive_folder(folder_info: dict) -> bool:
+    return bool(folder_info.get("driveId"))
+
+
+def validate_service_account_target(service: Resource, folder_id: str) -> None:
+    folder = get_drive_folder_info(service, folder_id)
+    if not is_shared_drive_folder(folder):
+        raise RuntimeError(SERVICE_ACCOUNT_PERSONAL_DRIVE_ERROR)
+
+
+def _format_upload_error(exc: Exception) -> str:
+    message = str(exc)
+    if "storageQuotaExceeded" in message or "do not have storage quota" in message:
+        return SERVICE_ACCOUNT_PERSONAL_DRIVE_ERROR
+    return message
 
 
 @dataclass
@@ -164,7 +193,7 @@ def upload_images(
     drive_folder_id: str,
     *,
     workers: int = 6,
-    recursive: bool = True,
+    recursive: bool = False,
     checkpoint_path: Path | None = None,
     on_progress: Callable[[], None] | None = None,
 ) -> UploadResult:
@@ -193,13 +222,19 @@ def upload_images(
             file_id = _upload_with_retry(service, file_path, drive_folder_id)
             return file_path, file_id, None
         except Exception as exc:
-            return file_path, None, str(exc)
+            return file_path, None, _format_upload_error(exc)
+
+    abort_error: str | None = None
 
     with ThreadPoolExecutor(max_workers=workers) as executor:
         futures = {executor.submit(upload_one, path): path for path in pending}
 
         with tqdm(total=len(pending), desc="Uploading", unit="file") as bar:
             for future in as_completed(futures):
+                if abort_error is not None:
+                    future.cancel()
+                    continue
+
                 file_path, file_id, error = future.result()
 
                 with lock:
@@ -213,11 +248,25 @@ def upload_images(
                         result.failed += 1
                         result.errors.append((key, checkpoint.failed[key]))
 
+                        if "Service accounts cannot upload to personal Google Drive" in (
+                            checkpoint.failed[key]
+                        ):
+                            abort_error = checkpoint.failed[key]
+
                     if checkpoint_path:
                         checkpoint.save(checkpoint_path)
 
+                bar.set_postfix(ok=result.uploaded, failed=result.failed, refresh=False)
                 bar.update(1)
                 if on_progress:
                     on_progress()
+
+                if abort_error is not None:
+                    for pending_future in futures:
+                        pending_future.cancel()
+                    break
+
+    if abort_error and len(result.errors) == 1:
+        raise RuntimeError(abort_error)
 
     return result

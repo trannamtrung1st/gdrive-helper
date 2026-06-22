@@ -10,7 +10,11 @@ from gdrive_helper.auth import (
     is_service_account,
     service_account_email,
 )
-from gdrive_helper.uploader import create_drive_folder, upload_images
+from gdrive_helper.uploader import (
+    create_drive_folder,
+    upload_images,
+    validate_service_account_target,
+)
 
 
 def _default_checkpoint(source: Path) -> Path:
@@ -57,9 +61,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="Concurrent upload workers (default: 6; try 4-8 for ~2000 files)",
     )
     parser.add_argument(
-        "--no-recursive",
+        "--recursive",
         action="store_true",
-        help="Only upload images in the top-level folder",
+        help="Also upload images in subfolders (default: top-level folder only)",
     )
     parser.add_argument(
         "--checkpoint",
@@ -95,10 +99,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if is_service_account(args.credentials):
         email = service_account_email(args.credentials)
-        print(
-            f"Using service account: {email}\n"
-            "Ensure the Drive folder is shared with this email (Editor access)."
-        )
+        print(f"Using service account: {email}")
 
     creds = get_credentials(args.credentials, args.token)
     service = build_drive_service(creds)
@@ -112,18 +113,29 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(f"Created Drive folder '{args.drive_folder_name}' (id: {drive_folder_id})")
 
+    if is_service_account(args.credentials) and drive_folder_id:
+        try:
+            validate_service_account_target(service, drive_folder_id)
+        except RuntimeError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 1
+
     checkpoint_path = None
     if not args.no_checkpoint:
         checkpoint_path = args.checkpoint or _default_checkpoint(source)
 
-    result = upload_images(
-        creds,
-        source,
-        drive_folder_id,
-        workers=args.workers,
-        recursive=not args.no_recursive,
-        checkpoint_path=checkpoint_path,
-    )
+    try:
+        result = upload_images(
+            creds,
+            source,
+            drive_folder_id,
+            workers=args.workers,
+            recursive=args.recursive,
+            checkpoint_path=checkpoint_path,
+        )
+    except RuntimeError as exc:
+        print(f"\nError: {exc}", file=sys.stderr)
+        return 1
 
     print()
     print(f"Uploaded: {result.uploaded}")
