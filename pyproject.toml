@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gdrive-helper"
+version = "0.1.0"
+description = "Batch upload images from a folder to Google Drive"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "google-api-python-client>=2.100.0",
+    "google-auth-httplib2>=0.2.0",
+    "google-auth-oauthlib>=1.2.0",
+    "tqdm>=4.66.0",
+]
+
+[project.scripts]
+gdrive-upload = "gdrive_helper.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
